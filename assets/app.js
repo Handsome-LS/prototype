@@ -16,11 +16,13 @@
   var modalKicker = document.querySelector("[data-modal-kicker]");
   var modalBackdrop = document.querySelector("[data-modal-backdrop]");
   var toastEl = document.querySelector("[data-toast]");
+  var themeToggle = document.querySelector("[data-theme-toggle]");
   var helpTooltip = null;
   var activeHelp = null;
   var helpTooltipPinned = false;
   var initialOperationLogs = seedOperationLogs();
   var chartInstances = {};
+  var THEME_STORAGE_KEY = "finance-prototype-theme";
 
   var state = {
     page: "home",
@@ -310,6 +312,7 @@
   };
 
   function init() {
+    applyTheme(readThemePreference(), false);
     fillSelect("customer", data.customers);
     fillSelect("supplier", data.suppliers);
     fillSelect("sku", data.skus);
@@ -332,6 +335,33 @@
       option.textContent = value;
       select.appendChild(option);
     });
+  }
+
+  function readThemePreference() {
+    try {
+      return window.localStorage.getItem(THEME_STORAGE_KEY) === "dark" ? "dark" : "light";
+    } catch (error) {
+      return "light";
+    }
+  }
+
+  function applyTheme(theme, persist) {
+    var dark = theme === "dark";
+    document.documentElement.dataset.theme = dark ? "dark" : "light";
+    if (themeToggle) {
+      var action = dark ? "切换至浅色模式" : "切换至黑夜模式";
+      var icon = themeToggle.querySelector("[data-theme-icon]");
+      themeToggle.setAttribute("aria-pressed", dark ? "true" : "false");
+      themeToggle.setAttribute("aria-label", action);
+      themeToggle.setAttribute("title", action);
+      if (icon) icon.setAttribute("href", dark ? "#i-sun" : "#i-moon");
+    }
+    if (!persist) return;
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, dark ? "dark" : "light");
+    } catch (error) {
+      // The visual preference still applies when browser storage is unavailable.
+    }
   }
 
   function bindShell() {
@@ -368,6 +398,14 @@
       updateLastUpdatedTime();
       toast("已刷新财务 Mock 数据视图");
     });
+    if (themeToggle) {
+      themeToggle.addEventListener("click", function () {
+        var nextTheme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+        applyTheme(nextTheme, true);
+        render();
+        toast(nextTheme === "dark" ? "已切换至黑夜模式" : "已切换至浅色模式");
+      });
+    }
     document.querySelector("[data-close]").addEventListener("click", closeDrawer);
     backdrop.addEventListener("click", closeDrawer);
     document.querySelector("[data-close-modal]").addEventListener("click", closeModal);
@@ -1521,17 +1559,18 @@
     var labels = definition.labels;
     var showSlider = labels.length > 7;
     var zoom = [{ type: "inside", xAxisIndex: 0, filterMode: "none" }];
+    var theme = dashboardChartTheme();
     if (showSlider) {
       zoom.push({
         type: "slider",
         xAxisIndex: 0,
         height: 14,
         bottom: 4,
-        borderColor: "#d5dee7",
-        fillerColor: "rgba(36,95,159,.12)",
+        borderColor: theme.line,
+        fillerColor: theme.zoomFill,
         handleSize: 10,
         moveHandleSize: 0,
-        textStyle: { color: "#788694", fontSize: 9 }
+        textStyle: { color: theme.muted, fontSize: 9 }
       });
     }
     return {
@@ -1545,11 +1584,11 @@
       tooltip: {
         trigger: "axis",
         confine: true,
-        backgroundColor: "#172b3d",
+        backgroundColor: theme.tooltip,
         borderWidth: 0,
         padding: [8, 10],
-        textStyle: { color: "#ffffff", fontSize: 11 },
-        axisPointer: { type: "line", lineStyle: { color: "#aebdca", type: "dashed" } },
+        textStyle: { color: theme.tooltipText, fontSize: 11 },
+        axisPointer: { type: "line", lineStyle: { color: theme.pointer, type: "dashed" } },
         formatter: function (params) { return dashboardChartTooltip(definition, params); }
       },
       legend: {
@@ -1560,7 +1599,7 @@
         itemWidth: 15,
         itemHeight: 8,
         itemGap: 16,
-        textStyle: { color: "#4f5f6d", fontSize: 11, fontWeight: 700 }
+        textStyle: { color: theme.text, fontSize: 11, fontWeight: 700 }
       },
       grid: {
         top: 42,
@@ -1573,9 +1612,9 @@
         type: "category",
         boundaryGap: false,
         data: labels,
-        axisLine: { lineStyle: { color: "#c8d2dc" } },
+        axisLine: { lineStyle: { color: theme.line } },
         axisTick: { show: false },
-        axisLabel: { color: "#788694", fontSize: 10, hideOverlap: true },
+        axisLabel: { color: theme.muted, fontSize: 10, hideOverlap: true },
         splitLine: { show: false }
       },
       yAxis: {
@@ -1584,11 +1623,11 @@
         axisLine: { show: false },
         axisTick: { show: false },
         axisLabel: {
-          color: "#788694",
+          color: theme.muted,
           fontSize: 10,
           formatter: function (value) { return definition.axisFormatter(value); }
         },
-        splitLine: { lineStyle: { color: "#e1e7ed", type: "dashed" } }
+        splitLine: { lineStyle: { color: theme.grid, type: "dashed" } }
       },
       dataZoom: zoom,
       series: definition.series.map(function (item) {
@@ -1605,6 +1644,21 @@
           emphasis: { focus: "series" }
         };
       })
+    };
+  }
+
+  function dashboardChartTheme() {
+    var styles = window.getComputedStyle(document.documentElement);
+    function color(name) { return styles.getPropertyValue(name).trim(); }
+    return {
+      line: color("--chart-line"),
+      grid: color("--chart-grid"),
+      muted: color("--chart-muted"),
+      text: color("--chart-text"),
+      tooltip: color("--chart-tooltip"),
+      tooltipText: color("--chart-tooltip-text"),
+      pointer: color("--chart-pointer"),
+      zoomFill: color("--chart-zoom-fill")
     };
   }
 
