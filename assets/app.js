@@ -20,6 +20,7 @@
   var activeHelp = null;
   var helpTooltipPinned = false;
   var initialOperationLogs = seedOperationLogs();
+  var chartInstances = {};
 
   var state = {
     page: "home",
@@ -29,10 +30,7 @@
     base: { tab: "订单金额数据", includeVoid: false },
     reconcile: { tab: "全部", selectedBill: data.bills[0].id },
     logisticsRecon: { tab: "全部", selectedBill: data.logisticsBills[0].id },
-    chartSeries: {
-      finance: { income: true, cost: true, gross: true },
-      exception: { amountDiff: true, platformMissing: true, unmatched: true, duplicate: true }
-    },
+    chartLegendSelection: {},
     statementSnapshots: {},
     statementSequence: 0,
     importStep: 1,
@@ -318,6 +316,7 @@
     bindShell();
     updateRealtimeTime();
     window.setInterval(updateRealtimeTime, 1000);
+    window.addEventListener("resize", resizeDashboardCharts);
     initHelpTooltip();
     enhanceHelp(document);
     enhanceSelects(document);
@@ -432,6 +431,7 @@
 
   function render() {
     hideHelpTooltip();
+    disposeDashboardCharts();
     titleEl.textContent = pageNames[state.page];
     crumbEl.textContent = pageNames[state.page];
     syncPageFilterVisibility();
@@ -460,6 +460,7 @@
     if (state.page !== "operationLogs") pageEl.insertAdjacentHTML("afterbegin", currencyPolicy(["logisticsBills", "logisticsReconcile", "logisticsSettlement", "logistics", "logisticsReport"].indexOf(state.page) >= 0));
     enhanceHelp(pageEl);
     enhanceSelects(pageEl);
+    if (state.page === "home") window.requestAnimationFrame(renderDashboardCharts);
   }
 
   function syncPageFilterVisibility() {
@@ -1425,7 +1426,7 @@
       kpi("平台缺单条数", data.reconciliationLines.filter(function (l) { return l.matchStatus === "平台缺单"; }).length, "创建外部补录采购单", "alert", "reconcile") +
       kpi("待结算金额", money(payable, data.baseCurrency), "工厂待付款", "warn", "settlement") +
       kpi("已逾期待办", 6, "对账/结算 SLA", "alert", "exceptions") + '</section>' +
-      '<section class="page-section grid grid-2"><div>' + panel("收入 / 成本 / 毛利趋势", "按日、周、月切换的示意趋势", financeChart()) + '</div><div>' + panel("对账异常趋势", "金额差异 / 平台缺单 / 未匹配 / 重复", exceptionChart()) + '</div></section>' +
+      '<section class="page-section grid grid-2"><div>' + panel("收入 / 成本 / 毛利趋势", "按日、周、月切换的示意趋势", dashboardChartShell("finance", "收入、成本与毛利趋势")) + '</div><div>' + panel("对账异常趋势", "金额差异 / 平台缺单 / 未匹配 / 重复", dashboardChartShell("exception", "对账异常趋势")) + '</div></section>' +
       '<section class="page-section">' + panel("核心页面入口", "从首页进入客户资金、账单、对账、物流和利润页面", quickEntry()) + '</section>' +
       '<section class="page-section">' + panel("待办列表", "点击进入对账工作台", todoTable()) + '</section>';
   }
@@ -1435,65 +1436,184 @@
     return '<div class="quick-row">' + pages.map(function (p) { return '<button class="quick" data-go="' + esc(p[1]) + '">' + esc(p[0]) + '</button>'; }).join("") + '</div>';
   }
 
+  function dashboardChartShell(chartId, chartLabel) {
+    return '<div class="echart" data-echart="' + esc(chartId) + '" role="img" aria-label="' + esc(chartLabel) + '"></div>';
+  }
+
   function financeChart() {
-    return svgChart("finance", "收入、成本与毛利趋势", [
-      { id: "income", label: "收入", values: [82, 91, 96, 88, 110, 118, 126], color: "#245f9f", dash: "" },
-      { id: "cost", label: "成本", values: [48, 52, 55, 61, 64, 69, 72], color: "#a15c00", dash: "8 5" },
-      { id: "gross", label: "毛利", values: [34, 39, 41, 27, 46, 49, 54], color: "#19724c", dash: "2 4" }
-    ]);
+    return {
+      id: "finance",
+      label: "收入、成本与毛利趋势",
+      labels: ["08-07", "08-08", "08-09", "08-10", "08-11", "08-12", "08-13"],
+      axisFormatter: formatChartAmount,
+      valueFormatter: function (value) { return textMoney(value, data.baseCurrency); },
+      series: [
+        { label: "收入", values: [82, 91, 96, 88, 110, 118, 126], color: "#245f9f", lineType: "solid" },
+        { label: "成本", values: [48, 52, 55, 61, 64, 69, 72], color: "#a15c00", lineType: "dashed" },
+        { label: "毛利", values: [34, 39, 41, 27, 46, 49, 54], color: "#19724c", lineType: "dotted" }
+      ]
+    };
   }
+
   function exceptionChart() {
-    return svgChart("exception", "对账异常趋势", [
-      { id: "amountDiff", label: "金额差异", values: [6, 8, 5, 12, 10, 16, 18], color: "#b42331", dash: "" },
-      { id: "platformMissing", label: "平台缺单", values: [3, 5, 4, 7, 9, 8, 11], color: "#a15c00", dash: "8 5" },
-      { id: "unmatched", label: "未匹配", values: [4, 3, 6, 7, 8, 6, 10], color: "#245f9f", dash: "2 4" },
-      { id: "duplicate", label: "重复", values: [1, 2, 1, 3, 2, 4, 3], color: "#667085", dash: "10 4 2 4" }
-    ]);
+    return {
+      id: "exception",
+      label: "对账异常趋势",
+      labels: ["08-07", "08-08", "08-09", "08-10", "08-11", "08-12", "08-13"],
+      axisFormatter: formatChartCount,
+      valueFormatter: function (value) { return formatChartCount(value) + " 条"; },
+      series: [
+        { label: "金额差异", values: [6, 8, 5, 12, 10, 16, 18], color: "#b42331", lineType: "solid" },
+        { label: "平台缺单", values: [3, 5, 4, 7, 9, 8, 11], color: "#a15c00", lineType: "dashed" },
+        { label: "未匹配", values: [4, 3, 6, 7, 8, 6, 10], color: "#245f9f", lineType: "dotted" },
+        { label: "重复", values: [1, 2, 1, 3, 2, 4, 3], color: "#667085", lineType: [10, 4, 2, 4] }
+      ]
+    };
   }
-  function svgChart(chartId, chartLabel, series) {
-    var days = ["08-07", "08-08", "08-09", "08-10", "08-11", "08-12", "08-13"];
-    var chartState = state.chartSeries[chartId] || {};
-    var w = 660, h = 220, left = 42, right = 18, top = 18, bottom = 28;
-    var plotHeight = h - top - bottom;
-    var maxValue = 1;
-    series.forEach(function (item) {
-      item.values.forEach(function (value) { maxValue = Math.max(maxValue, value); });
+
+  function formatChartAmount(value) {
+    var abs = Math.abs(value);
+    if (abs >= 1000) return (value / 1000).toFixed(abs >= 10000 ? 0 : 1) + "k";
+    return value % 1 ? value.toFixed(1) : String(value);
+  }
+
+  function formatChartCount(value) {
+    return String(Math.round(value));
+  }
+
+  function renderDashboardCharts() {
+    [financeChart(), exceptionChart()].forEach(function (definition) {
+      var container = pageEl.querySelector('[data-echart="' + definition.id + '"]');
+      if (!container) return;
+      if (chartInstances[definition.id]) return;
+      if (!window.echarts) {
+        container.innerHTML = '<div class="echart-fallback" role="status">图表组件加载失败</div>';
+        return;
+      }
+      if (!definition.labels.length) {
+        container.innerHTML = '<div class="echart-fallback" role="status">当前筛选范围暂无趋势数据</div>';
+        return;
+      }
+      var chart = window.echarts.init(container, null, { renderer: "canvas" });
+      chart.setOption(dashboardChartOption(definition), true);
+      chart.resize();
+      chart.on("legendselectchanged", function (event) {
+        state.chartLegendSelection[definition.id] = event.selected;
+      });
+      chartInstances[definition.id] = chart;
     });
-    var magnitude = Math.pow(10, Math.max(0, Math.floor(Math.log(maxValue) / Math.LN10) - 1));
-    var max = Math.ceil(maxValue * 1.1 / magnitude) * magnitude;
-    var xStep = (w - left - right) / (days.length - 1);
-    function p(v, i) { return [left + i * xStep, top + (max - v) / max * plotHeight]; }
-    function axisValue(value) { return value % 1 === 0 ? value : value.toFixed(1); }
-    var grid = [0, 1, 2, 3, 4].map(function (i) {
-      var y = top + i * plotHeight / 4;
-      var value = max - i * max / 4;
-      return '<line class="chart-grid" x1="' + left + '" y1="' + y + '" x2="' + (w - right) + '" y2="' + y + '"></line>' +
-        '<text class="chart-axis-label" x="' + (left - 7) + '" y="' + (y + 3) + '" text-anchor="end">' + axisValue(value) + '</text>';
+  }
+
+  function disposeDashboardCharts() {
+    Object.keys(chartInstances).forEach(function (id) {
+      chartInstances[id].dispose();
+    });
+    chartInstances = {};
+  }
+
+  function resizeDashboardCharts() {
+    Object.keys(chartInstances).forEach(function (id) {
+      chartInstances[id].resize();
+    });
+  }
+
+  function dashboardChartOption(definition) {
+    var labels = definition.labels;
+    var showSlider = labels.length > 7;
+    var zoom = [{ type: "inside", xAxisIndex: 0, filterMode: "none" }];
+    if (showSlider) {
+      zoom.push({
+        type: "slider",
+        xAxisIndex: 0,
+        height: 14,
+        bottom: 4,
+        borderColor: "#d5dee7",
+        fillerColor: "rgba(36,95,159,.12)",
+        handleSize: 10,
+        moveHandleSize: 0,
+        textStyle: { color: "#788694", fontSize: 9 }
+      });
+    }
+    return {
+      color: definition.series.map(function (item) { return item.color; }),
+      animationDuration: 260,
+      animationDurationUpdate: 160,
+      aria: {
+        enabled: true,
+        description: definition.label + "。可通过图例切换指标显示。"
+      },
+      tooltip: {
+        trigger: "axis",
+        confine: true,
+        backgroundColor: "#172b3d",
+        borderWidth: 0,
+        padding: [8, 10],
+        textStyle: { color: "#ffffff", fontSize: 11 },
+        axisPointer: { type: "line", lineStyle: { color: "#aebdca", type: "dashed" } },
+        formatter: function (params) { return dashboardChartTooltip(definition, params); }
+      },
+      legend: {
+        top: 0,
+        left: 0,
+        type: "scroll",
+        selected: state.chartLegendSelection[definition.id] || {},
+        itemWidth: 15,
+        itemHeight: 8,
+        itemGap: 16,
+        textStyle: { color: "#4f5f6d", fontSize: 11, fontWeight: 700 }
+      },
+      grid: {
+        top: 42,
+        right: 18,
+        bottom: showSlider ? 42 : 26,
+        left: 8,
+        containLabel: true
+      },
+      xAxis: {
+        type: "category",
+        boundaryGap: false,
+        data: labels,
+        axisLine: { lineStyle: { color: "#c8d2dc" } },
+        axisTick: { show: false },
+        axisLabel: { color: "#788694", fontSize: 10, hideOverlap: true },
+        splitLine: { show: false }
+      },
+      yAxis: {
+        type: "value",
+        scale: true,
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: {
+          color: "#788694",
+          fontSize: 10,
+          formatter: function (value) { return definition.axisFormatter(value); }
+        },
+        splitLine: { lineStyle: { color: "#e1e7ed", type: "dashed" } }
+      },
+      dataZoom: zoom,
+      series: definition.series.map(function (item) {
+        return {
+          name: item.label,
+          type: "line",
+          data: item.values,
+          showSymbol: true,
+          symbol: "circle",
+          symbolSize: 6,
+          smooth: false,
+          lineStyle: { width: 2.5, type: item.lineType },
+          itemStyle: { color: item.color },
+          emphasis: { focus: "series" }
+        };
+      })
+    };
+  }
+
+  function dashboardChartTooltip(definition, params) {
+    if (!params || !params.length) return "";
+    var label = params[0].axisValueLabel || params[0].axisValue || "—";
+    return '<div class="echart-tooltip-title">' + esc(label) + "</div>" + params.map(function (item) {
+      return '<div class="echart-tooltip-row">' + item.marker + '<span>' + esc(item.seriesName) + "</span><b>" + esc(definition.valueFormatter(Number(item.value))) + "</b></div>";
     }).join("");
-    var paths = series.map(function (item) {
-      var visible = chartState[item.id] !== false;
-      var d = item.values.map(function (value, i) { var pt = p(value, i); return (i ? "L" : "M") + pt[0] + "," + pt[1]; }).join(" ");
-      var dash = item.dash ? ' stroke-dasharray="' + item.dash + '"' : "";
-      var points = item.values.map(function (value, i) {
-        var pt = p(value, i);
-        return '<circle class="chart-point" cx="' + pt[0] + '" cy="' + pt[1] + '" r="3" stroke="' + item.color + '"></circle>';
-      }).join("");
-      return '<g id="chart-' + chartId + "-" + item.id + '" class="chart-series' + (visible ? "" : " is-hidden") + '" data-series="' + item.id + '">' +
-        '<path class="chart-line" d="' + d + '" stroke="' + item.color + '"' + dash + '></path>' + points + '</g>';
-    }).join("");
-    var labels = days.map(function (d, i) { return '<text class="chart-label" x="' + (left + i * xStep - 12) + '" y="' + (h - 8) + '">' + d + "</text>"; }).join("");
-    var visibleNames = series.filter(function (item) { return chartState[item.id] !== false; }).map(function (item) { return item.label; });
-    var legend = '<fieldset class="chart-legend"><legend>显示指标</legend><div class="chart-legend-options">' + series.map(function (item) {
-      var visible = chartState[item.id] !== false;
-      var dash = item.dash ? ' stroke-dasharray="' + item.dash + '"' : "";
-      return '<label class="chart-legend-item' + (visible ? "" : " is-muted") + '"><input type="checkbox" data-chart-id="' + chartId + '" data-chart-series="' + item.id + '" aria-controls="chart-' + chartId + "-" + item.id + '" style="accent-color:' + item.color + '"' + (visible ? " checked" : "") + '>' +
-        '<svg class="chart-legend-sample" viewBox="0 0 32 8" aria-hidden="true"><line x1="1" y1="4" x2="31" y2="4" stroke="' + item.color + '"' + dash + '></line></svg>' +
-        '<span class="chart-legend-text">' + esc(item.label) + '</span></label>';
-    }).join("") + "</div></fieldset>";
-    var ariaLabel = chartLabel + "。当前显示：" + (visibleNames.length ? visibleNames.join("、") : "未显示任何指标");
-    return '<div class="interactive-chart" data-chart="' + chartId + '">' + legend + '<div class="chart-plot">' +
-      '<svg class="chart" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" role="img" data-chart-label="' + esc(chartLabel) + '" aria-label="' + esc(ariaLabel) + '">' + grid + paths + labels + '</svg>' +
-      '<div class="chart-empty-state" data-chart-empty role="status"' + (visibleNames.length ? " hidden" : "") + '>未选择显示指标</div></div></div>';
   }
   function todoTable() {
     var rows = data.bills.slice(0, 8).map(function (b) {
@@ -3076,9 +3196,6 @@
     if (event.target.dataset.importTemplate !== undefined) {
       state.importTemplateSelection[event.target.dataset.importTemplate] = event.target.value;
     }
-    if (event.target.dataset.chartSeries !== undefined) {
-      toggleChartSeries(event.target);
-    }
     if (event.target.dataset.selectedBill !== undefined) {
       state.reconcile.selectedBill = event.target.value;
       render();
@@ -3103,25 +3220,6 @@
       state.table.page = 1;
       render();
     }
-  }
-
-  function toggleChartSeries(input) {
-    var chartId = input.dataset.chartId;
-    var seriesId = input.dataset.chartSeries;
-    if (!state.chartSeries[chartId]) state.chartSeries[chartId] = {};
-    state.chartSeries[chartId][seriesId] = input.checked;
-    var chart = document.querySelector('[data-chart="' + chartId + '"]');
-    if (!chart) return;
-    var plottedSeries = chart.querySelector('[data-series="' + seriesId + '"]');
-    if (plottedSeries) plottedSeries.classList.toggle("is-hidden", !input.checked);
-    var legendItem = input.closest(".chart-legend-item");
-    if (legendItem) legendItem.classList.toggle("is-muted", !input.checked);
-    var selected = Array.prototype.slice.call(chart.querySelectorAll("[data-chart-series]:checked"));
-    var emptyState = chart.querySelector("[data-chart-empty]");
-    if (emptyState) emptyState.hidden = selected.length > 0;
-    var names = selected.map(function (item) { return item.closest(".chart-legend-item").querySelector(".chart-legend-text").textContent; });
-    var svg = chart.querySelector(".chart");
-    if (svg) svg.setAttribute("aria-label", svg.dataset.chartLabel + "。当前显示：" + (names.length ? names.join("、") : "未显示任何指标"));
   }
 
   function openDrawer(kicker, title, html) {

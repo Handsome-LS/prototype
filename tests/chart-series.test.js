@@ -6,15 +6,23 @@ var path = require("path");
 
 var app = fs.readFileSync(path.join(__dirname, "..", "assets", "app.js"), "utf8");
 var styles = fs.readFileSync(path.join(__dirname, "..", "assets", "styles.css"), "utf8");
+var index = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 
-assert.ok(app.indexOf('data-chart-series="') >= 0, "chart legends must expose per-series controls");
-assert.ok(app.indexOf("function toggleChartSeries(input)") >= 0, "chart series controls must update visibility without rerendering the page");
-assert.ok(app.indexOf('stroke-dasharray="') >= 0, "chart series must use distinct line styles in addition to color");
-assert.ok(app.indexOf("Math.ceil(maxValue * 1.1 / magnitude) * magnitude") >= 0, "chart scale must adapt to the displayed data range");
-assert.ok(app.indexOf('aria-controls="chart-') >= 0, "series controls must identify their plotted series");
-
-assert.ok(styles.indexOf(".chart-legend-item") >= 0, "interactive chart legend styles must be present");
-assert.ok(styles.indexOf(".chart-series.is-hidden") >= 0, "unchecked series must have a hidden visual state");
-assert.ok(styles.indexOf(".chart-empty-state") >= 0, "charts must explain when every series is hidden");
+assert.ok(fs.existsSync(path.join(__dirname, "..", "assets", "echarts.min.js")), "ECharts runtime must be vendored for the static prototype");
+assert.ok(index.indexOf('assets/echarts.min.js') >= 0, "ECharts runtime must load before the application script");
+assert.ok(app.indexOf("window.echarts.init(") >= 0, "dashboard charts must use ECharts instances");
+assert.ok(app.indexOf("chart.setOption(") >= 0, "dashboard charts must set ECharts options");
+assert.ok(app.indexOf("window.requestAnimationFrame(renderDashboardCharts)") >= 0, "charts must initialize after the home view has been laid out");
+assert.ok(app.indexOf("tooltip:") >= 0, "ECharts charts must provide hover detail");
+assert.ok(app.indexOf("legend:") >= 0, "ECharts charts must provide native series selection");
+assert.ok(app.indexOf("dataZoom: zoom") >= 0, "long time ranges must provide ECharts zooming");
+assert.ok(app.indexOf("resizeDashboardCharts") >= 0 && app.indexOf(".resize()") >= 0, "ECharts instances must resize with the viewport");
+assert.ok(app.indexOf("disposeDashboardCharts") >= 0 && app.indexOf(".dispose()") >= 0, "ECharts instances must be disposed before rerendering");
+assert.ok(app.indexOf('labels: ["08-07", "08-08", "08-09", "08-10", "08-11", "08-12", "08-13"]') >= 0, "charts must retain the original seven-day labels");
+assert.ok(app.indexOf('values: [82, 91, 96, 88, 110, 118, 126]') >= 0, "finance chart must retain the original income series");
+assert.ok(app.indexOf('values: [6, 8, 5, 12, 10, 16, 18]') >= 0, "exception chart must retain the original amount-difference series");
+assert.ok(app.indexOf("function dashboardChartTooltip(") >= 0, "chart tooltips must format exact aggregated values");
+assert.ok(styles.indexOf(".echart {") >= 0, "ECharts containers must have stable dimensions");
+assert.ok(styles.indexOf(".echart-fallback") >= 0, "chart loading failures must have a visible fallback state");
 
 console.log("chart-series.test.js: all assertions passed");
