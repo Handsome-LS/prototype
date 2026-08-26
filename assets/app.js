@@ -316,6 +316,8 @@
     fillSelect("supplier", data.suppliers);
     fillSelect("sku", data.skus);
     bindShell();
+    updateRealtimeTime();
+    window.setInterval(updateRealtimeTime, 1000);
     initHelpTooltip();
     enhanceHelp(document);
     enhanceSelects(document);
@@ -364,8 +366,7 @@
       render();
     });
     document.querySelector("[data-refresh]").addEventListener("click", function () {
-      var d = new Date();
-      document.querySelector("[data-updated]").textContent = [d.getHours(), d.getMinutes(), d.getSeconds()].map(function (n) { return String(n).padStart(2, "0"); }).join(":");
+      updateLastUpdatedTime();
       toast("已刷新财务 Mock 数据视图");
     });
     document.querySelector("[data-close]").addEventListener("click", closeDrawer);
@@ -380,6 +381,20 @@
     document.addEventListener("input", handleInput);
     document.addEventListener("change", handleChange);
     syncCustomDateFields();
+  }
+
+  function formatClockTime(date) {
+    return [date.getHours(), date.getMinutes(), date.getSeconds()].map(function (value) {
+      return String(value).padStart(2, "0");
+    }).join(":");
+  }
+
+  function updateRealtimeTime() {
+    document.querySelector("[data-realtime]").textContent = formatClockTime(new Date());
+  }
+
+  function updateLastUpdatedTime() {
+    document.querySelector("[data-updated]").textContent = formatClockTime(new Date());
   }
 
   function navigate(page) {
